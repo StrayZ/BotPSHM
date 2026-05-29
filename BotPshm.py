@@ -8,11 +8,15 @@ from discord.ui import View, Button
 from dotenv import load_dotenv
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
+from pymongo import MongoClient
+from datetime import datetime
 
 load_dotenv()
 # ================= CONFIGURATION =================
 TOKEN = os.getenv("TOKEN")
+MONGOURI=os.getenv("MONGOURI")
 CHANNEL_ID = 1501624162907590867  # Salon RP présence
+DAYOFF_CHANNEL_ID = 1505269832361447485
 ROLE_ID = 1501628455018692690  # Rôle organisation
 HEURE_ENVOI = 16 # Heure RP (20h par défaut)
 
@@ -200,7 +204,267 @@ async def restart(ctx):
 
     await ctx.send("♻️ Reprise du relais en cours...")
     os.execv(sys.executable, ['python'] + sys.argv)
+#===========================Panel DayOFF================
 
+mongo = MongoClient(MONGOURI)
+
+db = mongo["botPSHM1"]
+config_collection = db["config"]
+
+# ================= JOURS =================
+
+JOURS = {
+    0: "Lundi",
+    1: "Mardi",
+    2: "Mercredi",
+    3: "Jeudi",
+    4: "Vendredi",
+    5: "Samedi",
+    6: "Dimanche"
+}
+
+# ================= LOAD / SAVE =================
+
+def load_dayoff():
+
+    data = config_collection.find_one({
+        "type": "dayoff"
+    })
+
+    if data:
+        return data.get("days", [])
+
+    return []
+
+
+def save_dayoff(days):
+
+    config_collection.update_one(
+        {
+            "type": "dayoff"
+        },
+        {
+            "$set": {
+                "days": days
+            }
+        },
+        upsert=True
+    )
+
+# ================= MESSAGE PRESENCE =================
+
+async def envoyer_presence():
+
+    channel = bot.get_channel(CHANNEL_ID)
+
+    if not channel:
+        return
+
+    role = channel.guild.get_role(ROLE_ID)
+
+    embed = discord.Embed(
+        title="📜 Registre des Présences",
+        description=(
+            "Merci de confirmer votre présence.\n\n"
+            "✅ Présent\n"
+            "❌ Absent\n"
+            "⏰ Retard"
+        ),
+        color=0x8B0000
+    )
+
+    msg = await channel.send(
+        content=role.mention,
+        embed=embed,
+        allowed_mentions=discord.AllowedMentions(
+            roles=True
+        )
+    )
+
+    await msg.add_reaction("✅")
+    await msg.add_reaction("❌")
+    await msg.add_reaction("⏰")
+
+# ================= AUTO PRESENCE =================
+
+@tasks.loop(minutes=1)
+async def presence_auto():
+
+    now = datetime.now()
+
+    if now.hour == HEURE_ENVOI and now.minute == 0:
+
+        days = load_dayoff()
+
+        # ================= JOUR OFF =================
+
+        if now.weekday() in days:
+
+            channel = bot.get_channel(
+                DAYOFF_CHANNEL_ID
+            )
+
+            if channel:
+
+                embed = discord.Embed(
+                    title="🌙 Jour OFF",
+                    description=(
+                        "Aucune présence aujourd'hui.\n\n"
+                        "Les Falcons restent dans l'ombre."
+                    ),
+                    color=0x222222
+                )
+
+                await channel.send(embed=embed)
+
+            return
+
+        # ================= PRESENCE =================
+
+        await envoyer_presence()
+
+# ================= VIEW =================
+
+class DayOffView(View):
+
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    async def toggle_day(
+        self,
+        interaction,
+        day_id
+    ):
+
+        days = load_dayoff()
+
+        if day_id in days:
+            days.remove(day_id)
+            status = "❌ Jour retiré"
+        else:
+            days.append(day_id)
+            status = "✅ Jour ajouté"
+
+        save_dayoff(days)
+
+        jours_text = "\n".join([
+            f"• {JOURS[d]}"
+            for d in sorted(days)
+        ])
+
+        if not jours_text:
+            jours_text = "Aucun"
+
+        embed = discord.Embed(
+            title="📅 Planning DayOff",
+            description=(
+                f"{status}\n\n"
+                f"{jours_text}"
+            ),
+            color=0x8B0000
+        )
+
+        await interaction.response.edit_message(
+            embed=embed,
+            view=self
+        )
+
+    # ================= BOUTONS =================
+
+    @discord.ui.button(
+        label="Lundi",
+        style=discord.ButtonStyle.grey
+    )
+    async def lundi(self, interaction, button):
+        await self.toggle_day(interaction, 0)
+
+    @discord.ui.button(
+        label="Mardi",
+        style=discord.ButtonStyle.grey
+    )
+    async def mardi(self, interaction, button):
+        await self.toggle_day(interaction, 1)
+
+    @discord.ui.button(
+        label="Mercredi",
+        style=discord.ButtonStyle.grey
+    )
+    async def mercredi(self, interaction, button):
+        await self.toggle_day(interaction, 2)
+
+    @discord.ui.button(
+        label="Jeudi",
+        style=discord.ButtonStyle.grey
+    )
+    async def jeudi(self, interaction, button):
+        await self.toggle_day(interaction, 3)
+
+    @discord.ui.button(
+        label="Vendredi",
+        style=discord.ButtonStyle.grey
+    )
+    async def vendredi(self, interaction, button):
+        await self.toggle_day(interaction, 4)
+
+    @discord.ui.button(
+        label="Samedi",
+        style=discord.ButtonStyle.red
+    )
+    async def samedi(self, interaction, button):
+        await self.toggle_day(interaction, 5)
+
+    @discord.ui.button(
+        label="Dimanche",
+        style=discord.ButtonStyle.red
+    )
+    async def dimanche(self, interaction, button):
+        await self.toggle_day(interaction, 6)
+
+# ================= COMMANDE PANEL =================
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def dayoff(ctx):
+
+    days = load_dayoff()
+
+    jours_text = "\n".join([
+        f"• {JOURS[d]}"
+        for d in sorted(days)
+    ])
+
+    if not jours_text:
+        jours_text = "Aucun"
+
+    embed = discord.Embed(
+        title="📅 Gestion des DayOff",
+        description=(
+            "Choisissez les jours OFF.\n\n"
+            f"{jours_text}"
+        ),
+        color=0x8B0000
+    )
+
+    embed.set_footer(
+        text="Les jours OFF désactivent automatiquement les présences."
+    )
+
+    await ctx.send(
+        embed=embed,
+        view=DayOffView()
+    )
+
+# ================= READY =================
+
+@bot.event
+async def on_ready():
+
+    print(f"✅ Connecté : {bot.user}")
+
+    bot.add_view(DayOffView())
+
+    if not presence_auto.is_running():
+        presence_auto.start()
 #=====================auto-rôle =======================
 BASE_ROLE_ID = 1502632030104453200
 
