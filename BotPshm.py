@@ -8,8 +8,8 @@ from discord.ui import View, Button
 from dotenv import load_dotenv
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
-from pymongo import MongoClient
 from datetime import datetime
+import json
 
 load_dotenv()
 # ================= CONFIGURATION =================
@@ -18,7 +18,7 @@ MONGOURI=os.getenv("MONGOURI")
 CHANNEL_ID = 1501624162907590867  # Salon RP présence
 DAYOFF_CHANNEL_ID = 1505269832361447485
 ROLE_ID = 1501628455018692690  # Rôle organisation
-HEURE_ENVOI = 16 # Heure RP (20h par défaut)
+HEURE_ENVOI = 22 # Heure RP (20h par défaut)
 
 # Messages immersifs RP (rotation automatique)
 MESSAGES_RP = [
@@ -105,6 +105,14 @@ async def hp (ctx):
         value="Redémarre le bot",
         inline=False
     )
+    
+    
+    embed.add_field(
+        name="//dayoff",
+        value="Création panel DAYOFF",
+        inline=False
+    )
+
 
     await ctx.send(embed=embed)
 # ================= ENVOI AUTO CHAQUE SOIR =================
@@ -206,11 +214,29 @@ async def restart(ctx):
     os.execv(sys.executable, ['python'] + sys.argv)
 #===========================Panel DayOFF================
 
-mongo = MongoClient(MONGOURI)
+FILE_DAYOFF = "dayoff.json"
 
-db = mongo["botPSHM1"]
-config_collection = db["config"]
 
+def load_dayoff():
+    try:
+        with open(FILE_DAYOFF, "r") as f:
+            data = json.load(f)
+
+        if isinstance(data, list):
+            return data
+
+        return []
+
+    except:
+        return []
+
+
+def save_dayoff(days):
+    try:
+        with open(FILE_DAYOFF, "w") as f:
+            json.dump(days, f, indent=2)
+    except Exception as e:
+        print("❌ Erreur save_dayoff :", e)
 # ================= JOURS =================
 
 JOURS = {
@@ -224,32 +250,6 @@ JOURS = {
 }
 
 # ================= LOAD / SAVE =================
-
-def load_dayoff():
-
-    data = config_collection.find_one({
-        "type": "dayoff"
-    })
-
-    if data:
-        return data.get("days", [])
-
-    return []
-
-
-def save_dayoff(days):
-
-    config_collection.update_one(
-        {
-            "type": "dayoff"
-        },
-        {
-            "$set": {
-                "days": days
-            }
-        },
-        upsert=True
-    )
 
 # ================= MESSAGE PRESENCE =================
 
@@ -323,100 +323,61 @@ async def presence_auto():
 
         await envoyer_presence()
 
-# ================= VIEW =================
-
 class DayOffView(View):
-
     def __init__(self):
         super().__init__(timeout=None)
 
-    async def toggle_day(
-        self,
-        interaction,
-        day_id
-    ):
+    async def toggle_day(self, interaction: discord.Interaction, day_id: int):
 
         days = load_dayoff()
 
         if day_id in days:
             days.remove(day_id)
-            status = "❌ Jour retiré"
         else:
             days.append(day_id)
-            status = "✅ Jour ajouté"
 
         save_dayoff(days)
 
-        jours_text = "\n".join([
+        jours_text = "\n".join(
             f"• {JOURS[d]}"
             for d in sorted(days)
-        ])
-
-        if not jours_text:
-            jours_text = "Aucun"
+        ) or "Aucun"
 
         embed = discord.Embed(
-            title="📅 Planning DayOff",
-            description=(
-                f"{status}\n\n"
-                f"{jours_text}"
-            ),
+            title="📅 Planning Day Off",
+            description=jours_text,
             color=0x8B0000
         )
 
-        await interaction.response.edit_message(
-            embed=embed,
-            view=self
-        )
+        await interaction.response.edit_message(embed=embed, view=self)
 
-    # ================= BOUTONS =================
+    # ===== BUTTONS =====
 
-    @discord.ui.button(
-        label="Lundi",
-        style=discord.ButtonStyle.grey
-    )
+    @discord.ui.button(label="Lundi", style=discord.ButtonStyle.grey, custom_id="day_lundi")
     async def lundi(self, interaction, button):
         await self.toggle_day(interaction, 0)
 
-    @discord.ui.button(
-        label="Mardi",
-        style=discord.ButtonStyle.grey
-    )
+    @discord.ui.button(label="Mardi", style=discord.ButtonStyle.grey, custom_id="day_mardi")
     async def mardi(self, interaction, button):
         await self.toggle_day(interaction, 1)
 
-    @discord.ui.button(
-        label="Mercredi",
-        style=discord.ButtonStyle.grey
-    )
+    @discord.ui.button(label="Mercredi", style=discord.ButtonStyle.grey, custom_id="day_mercredi")
     async def mercredi(self, interaction, button):
         await self.toggle_day(interaction, 2)
 
-    @discord.ui.button(
-        label="Jeudi",
-        style=discord.ButtonStyle.grey
-    )
+    @discord.ui.button(label="Jeudi", style=discord.ButtonStyle.grey, custom_id="day_jeudi")
     async def jeudi(self, interaction, button):
         await self.toggle_day(interaction, 3)
 
-    @discord.ui.button(
-        label="Vendredi",
-        style=discord.ButtonStyle.grey
-    )
+    @discord.ui.button(label="Vendredi", style=discord.ButtonStyle.grey, custom_id="day_vendredi")
     async def vendredi(self, interaction, button):
         await self.toggle_day(interaction, 4)
 
-    @discord.ui.button(
-        label="Samedi",
-        style=discord.ButtonStyle.red
-    )
+    @discord.ui.button(label="Samedi", style=discord.ButtonStyle.red, custom_id="day_samedi")
     async def samedi(self, interaction, button):
         await self.toggle_day(interaction, 5)
 
-    @discord.ui.button(
-        label="Dimanche",
-        style=discord.ButtonStyle.red
-    )
+    @discord.ui.button(label="Dimanche", style=discord.ButtonStyle.red, custom_id="day_dimanche")
     async def dimanche(self, interaction, button):
         await self.toggle_day(interaction, 6)
 
@@ -454,17 +415,7 @@ async def dayoff(ctx):
         view=DayOffView()
     )
 
-# ================= READY =================
 
-@bot.event
-async def on_ready():
-
-    print(f"✅ Connecté : {bot.user}")
-
-    bot.add_view(DayOffView())
-
-    if not presence_auto.is_running():
-        presence_auto.start()
 #=====================auto-rôle =======================
 BASE_ROLE_ID = 1502632030104453200
 
@@ -600,10 +551,11 @@ async def on_command(ctx):
 async def on_ready():
     print(f"Connecté en tant que {bot.user}")
 
-    presence_auto.start()
-
     # ✅ boutons persistants
     bot.add_view(TicketView())
+    bot.add_view(DayOffView())
+    if not presence_auto.is_running():
+        presence_auto.start()
 
 #=================================== Command Clear ==============================================================
 @bot.command()
