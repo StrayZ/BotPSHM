@@ -1,224 +1,58 @@
 import discord
 from discord.ext import commands, tasks
+from discord.ui import View, Button
+from dotenv import load_dotenv
 from datetime import datetime
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
 import random
 import os
 import sys
-from discord.ui import View, Button
-from dotenv import load_dotenv
-from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
-from datetime import datetime
 import json
 
+# ================= LOAD ENV =================
+
 load_dotenv()
-# ================= CONFIGURATION =================
+
+
+# ================= CONFIG =================
+
 TOKEN = os.getenv("TOKEN")
-MONGOURI=os.getenv("MONGOURI")
-CHANNEL_ID = 1501624162907590867  # Salon RP présence
-DAYOFF_CHANNEL_ID = 1505269832361447485
-ROLE_ID = 1501628455018692690  # Rôle organisation
-HEURE_ENVOI = 22 # Heure RP (20h par défaut)
 
-# Messages immersifs RP (rotation automatique)
-MESSAGES_RP = [
-    "🌒 Rendez-vous dans 2 lunes au niveau de la maison à gauche de Deadboot Creek en Ambarinho, les rituels se feront à cette endroit .",
-    "🔥 Rendez-vous dans 1 lune au niveau de Annesburg. Nous allons peut être rencontrait notre contact",
-    "🐎 Les Falcons répondent à l’appel du feu sacré.",
-    "💰 Les RedFalcons sont demandé à se réunir.",
-    "🪶 L'Organisation demande de confirmer votre présence.",
-    ".",
-    
-    
-]
+CHANNEL_ID = 1501624162907590867
+ROLE_ID = 1501628455018692690
 
-intents = discord.Intents.default()
-intents.message_content = True
-intents.guilds = True
-intents.members = True
+LOG_CHANNEL_ID = 1501653212229402634
 
-bot = commands.Bot(command_prefix="//", intents=intents)
+DAYOFF_CHANNEL_ID = 1501624162907590867
 
+BASE_ROLE_ID = 1502632030104453200
 
-# ================= CREATION MESSAGE IMMERSIF =================
+HEURE_ENVOI = 14
 
-async def envoyer_message_presence(channel, role):
-    texte_rp = random.choice(MESSAGES_RP)
+PORT = int(os.environ.get("PORT", 10000))
 
-    embed = discord.Embed(
-        title="📜 Registre des Présences — Organisation",
-        description=(
-            f"{texte_rp}\n\n"
-            f"Répondez au registre avant le début des opération:\n\n"
-            f"✅ Présent sur le terrain\n"
-            f"❌ Indisponible ce soir\n"
-            f"⏰ Arrivée tardive prévue"
-        ),
-        color=0x8B0000
-    )
+# ================= JOURS =================
 
-    embed.set_footer(text="Le silence est remarqué. L'absence aussi.")
-    message = await channel.send(
-        content=role.mention,
-        embed=embed,
-        allowed_mentions=discord.AllowedMentions(roles=True))
- 
-    await message.add_reaction("✅")
-    await message.add_reaction("❌")
-    await message.add_reaction("⏰")
+JOURS = {
+    0: "Lundi",
+    1: "Mardi",
+    2: "Mercredi",
+    3: "Jeudi",
+    4: "Vendredi",
+    5: "Samedi",
+    6: "Dimanche"
+}
 
-# ================= READY =================
-@bot.command()
-async def hp (ctx):
-
-    embed = discord.Embed(
-        title="📖 Commandes Falcons",
-        color=0x8B0000
-    )
-
-    embed.add_field(
-        name="//registre",
-        value="Envoie un registre RP",
-        inline=False
-    )
-
-    embed.add_field(
-        name="//rapport ID",
-        value="Rapport des présences",
-        inline=False
-    )
-
-    embed.add_field(
-        name="//panel",
-        value="Créer le panel ticket",
-        inline=False
-    )
-
-    embed.add_field(
-        name="//clear 10",
-        value="Supprimer des messages",
-        inline=False
-    )
-
-    embed.add_field(
-        name="//restart",
-        value="Redémarre le bot",
-        inline=False
-    )
-    
-    
-    embed.add_field(
-        name="//dayoff",
-        value="Création panel DAYOFF",
-        inline=False
-    )
-
-
-    await ctx.send(embed=embed)
-# ================= ENVOI AUTO CHAQUE SOIR =================
-
-@tasks.loop(minutes=1)
-async def presence_auto():
-    now = datetime.now()
-
-    if now.hour == HEURE_ENVOI and now.minute == 0:
-        channel = bot.get_channel(CHANNEL_ID)
-
-        if channel:
-            role = channel.guild.get_role(ROLE_ID)
-            await envoyer_message_presence(channel, role)
-
-
-# ================= COMMANDE MANUELLE STAFF =================
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def registre(ctx):
-    """Déclenche le registre de présence RP manuellement"""
-
-    role = ctx.guild.get_role(ROLE_ID)
-
-    await envoyer_message_presence(ctx.channel, role)
-
-
-# ================= RAPPORT AUTOMATIQUE =================
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def rapport(ctx, message_id: int):
-    """Affiche un rapport des présences basé sur les réactions"""
-
-    message = await ctx.channel.fetch_message(message_id)
-
-    presents = []
-    absents = []
-    retard = []
-
-    for reaction in message.reactions:
-
-        async for user in reaction.users():
-            if user.bot:
-                continue
-
-            if str(reaction.emoji) == "✅":
-                presents.append(user)
-
-            elif str(reaction.emoji) == "❌":
-                absents.append(user)
-
-            elif str(reaction.emoji) == "⏰":
-                retard.append(user)
-
-    embed = discord.Embed(
-        title="📊 Rapport des Effectifs",
-        description="Lecture du registre terminée.",
-        color=0x222222
-    )
-
-    embed.add_field(
-        name="Présents",
-        value="\n".join([u.mention for u in presents]) or "Personne",
-        inline=False
-    )
-
-    embed.add_field(
-        name="Absents",
-        value="\n".join([u.mention for u in absents]) or "Personne",
-        inline=False
-    )
-
-    embed.add_field(
-        name="Retard",
-        value="\n".join([u.mention for u in retard]) or "Personne",
-        inline=False
-    )
-
-    await ctx.send(embed=embed)
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def stop(ctx):
-    """Arrête le bot (Admin uniquement)"""
-
-    await ctx.send("🛑 Le registre est fermé pour ce soir... extinction du relais.")
-    await bot.close()
-    os._exit(0)
-    print("Le bot c'est bien coupé")
-
-#Redémarrage du bot
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def restart(ctx):
-    """Redémarre le bot (Admin uniquement)"""
-
-    await ctx.send("♻️ Reprise du relais en cours...")
-    os.execv(sys.executable, ['python'] + sys.argv)
-#===========================Panel DayOFF================
+# ================= DAYOFF JSON =================
 
 FILE_DAYOFF = "dayoff.json"
 
-
 def load_dayoff():
+
     try:
+
         with open(FILE_DAYOFF, "r") as f:
             data = json.load(f)
 
@@ -232,48 +66,101 @@ def load_dayoff():
 
 
 def save_dayoff(days):
+
     try:
+
         with open(FILE_DAYOFF, "w") as f:
             json.dump(days, f, indent=2)
+
     except Exception as e:
         print("❌ Erreur save_dayoff :", e)
-# ================= JOURS =================
 
-JOURS = {
-    0: "Lundi",
-    1: "Mardi",
-    2: "Mercredi",
-    3: "Jeudi",
-    4: "Vendredi",
-    5: "Samedi",
-    6: "Dimanche"
-}
+# ================= HEURE JSON =================
 
-# ================= LOAD / SAVE =================
+FILE_HOUR = "heure_presence.json"
 
-# ================= MESSAGE PRESENCE =================
+def load_hour():
 
-async def envoyer_presence():
+    try:
 
-    channel = bot.get_channel(CHANNEL_ID)
+        with open(FILE_HOUR, "r") as f:
+            return json.load(f)
 
-    if not channel:
-        return
+    except:
 
-    role = channel.guild.get_role(ROLE_ID)
+        data = {
+            "heure": 22,
+            "minute": 0
+        }
+
+        with open(FILE_HOUR, "w") as f:
+            json.dump(data, f, indent=2)
+
+        return data
+
+
+def save_hour(hour, minute):
+
+    data = {
+        "heure": hour,
+        "minute": minute
+    }
+
+    with open(FILE_HOUR, "w") as f:
+        json.dump(data, f, indent=2)
+
+# ================= RP MESSAGES =================
+
+MESSAGES_RP = [
+
+    "🌒 Rendez-vous dans 2 lunes au niveau de la maison à gauche de Deadboot Creek en Ambarinho.",
+
+    "🔥 Rendez-vous dans 1 lune au niveau de Annesburg.",
+
+    "🐎 Les Falcons répondent à l’appel du feu sacré.",
+
+    "💰 Les RedFalcons sont demandés à se réunir.",
+
+    "🪶 L'Organisation demande de confirmer votre présence."
+]
+
+# ================= INTENTS =================
+
+intents = discord.Intents.default()
+
+intents.message_content = True
+intents.guilds = True
+intents.members = True
+
+# ================= BOT =================
+
+bot = commands.Bot(
+    command_prefix="//",
+    intents=intents
+)
+
+# ================= SEND PRESENCE =================
+
+async def envoyer_message_presence(channel, role):
+
+    texte_rp = random.choice(MESSAGES_RP)
 
     embed = discord.Embed(
         title="📜 Registre des Présences",
         description=(
-            "Merci de confirmer votre présence.\n\n"
-            "✅ Présent\n"
-            "❌ Absent\n"
-            "⏰ Retard"
+            f"{texte_rp}\n\n"
+            f"✅ Présent\n"
+            f"❌ Absent\n"
+            f"⏰ Retard"
         ),
         color=0x8B0000
     )
 
-    msg = await channel.send(
+    embed.set_footer(
+        text="Le silence est remarqué."
+    )
+
+    message = await channel.send(
         content=role.mention,
         embed=embed,
         allowed_mentions=discord.AllowedMentions(
@@ -281,35 +168,235 @@ async def envoyer_presence():
         )
     )
 
-    await msg.add_reaction("✅")
-    await msg.add_reaction("❌")
-    await msg.add_reaction("⏰")
+    await message.add_reaction("✅")
+    await message.add_reaction("❌")
+    await message.add_reaction("⏰")
+
+# ================= DAYOFF VIEW =================
+
+class DayOffView(View):
+
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    async def toggle_day(self, interaction, day_id):
+
+        days = load_dayoff()
+
+        if day_id in days:
+            days.remove(day_id)
+
+        else:
+            days.append(day_id)
+
+        save_dayoff(days)
+
+        jours_text = "\n".join(
+            [f"• {JOURS[d]}" for d in sorted(days)]
+        )
+
+        if not jours_text:
+            jours_text = "Aucun"
+
+        embed = discord.Embed(
+            title="📅 Planning Day Off",
+            description=jours_text,
+            color=0x8B0000
+        )
+
+        await interaction.response.edit_message(
+            embed=embed,
+            view=self
+        )
+
+    @discord.ui.button(
+        label="Lundi",
+        style=discord.ButtonStyle.grey,
+        custom_id="lundi"
+    )
+    async def lundi(self, interaction, button):
+        await self.toggle_day(interaction, 0)
+
+    @discord.ui.button(
+        label="Mardi",
+        style=discord.ButtonStyle.grey,
+        custom_id="mardi"
+    )
+    async def mardi(self, interaction, button):
+        await self.toggle_day(interaction, 1)
+
+    @discord.ui.button(
+        label="Mercredi",
+        style=discord.ButtonStyle.grey,
+        custom_id="mercredi"
+    )
+    async def mercredi(self, interaction, button):
+        await self.toggle_day(interaction, 2)
+
+    @discord.ui.button(
+        label="Jeudi",
+        style=discord.ButtonStyle.grey,
+        custom_id="jeudi"
+    )
+    async def jeudi(self, interaction, button):
+        await self.toggle_day(interaction, 3)
+
+    @discord.ui.button(
+        label="Vendredi",
+        style=discord.ButtonStyle.grey,
+        custom_id="vendredi"
+    )
+    async def vendredi(self, interaction, button):
+        await self.toggle_day(interaction, 4)
+
+    @discord.ui.button(
+        label="Samedi",
+        style=discord.ButtonStyle.red,
+        custom_id="samedi"
+    )
+    async def samedi(self, interaction, button):
+        await self.toggle_day(interaction, 5)
+
+    @discord.ui.button(
+        label="Dimanche",
+        style=discord.ButtonStyle.red,
+        custom_id="dimanche"
+    )
+    async def dimanche(self, interaction, button):
+        await self.toggle_day(interaction, 6)
+
+# ================= TICKET VIEW =================
+
+class TicketView(View):
+
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(
+        label="🥃 Prend un Béésh Tichii et rentre",
+        style=discord.ButtonStyle.red,
+        custom_id="open_ticket"
+    )
+    async def open_ticket(self, interaction, button):
+
+        guild = interaction.guild
+        author = interaction.user
+
+        category = discord.utils.get(
+            guild.categories,
+            name="Ticket RP"
+        )
+
+        if category is None:
+
+            await interaction.response.send_message(
+                "❌ Catégorie Ticket RP introuvable.",
+                ephemeral=True
+            )
+
+            return
+
+        overwrites = {
+
+            guild.default_role:
+            discord.PermissionOverwrite(
+                read_messages=False
+            ),
+
+            author:
+            discord.PermissionOverwrite(
+                read_messages=True,
+                send_messages=True
+            ),
+
+            guild.me:
+            discord.PermissionOverwrite(
+                read_messages=True
+            )
+        }
+
+        ticket_channel = await guild.create_text_channel(
+
+            name=f"ticket-{author.name}",
+
+            category=category,
+
+            overwrites=overwrites
+        )
+
+        embed = discord.Embed(
+            title="📜 Ticket Ouvert",
+            description="Expose ta demande.",
+            color=0x8B0000
+        )
+
+        await ticket_channel.send(
+            author.mention,
+            embed=embed
+        )
+
+        await interaction.response.send_message(
+            f"🎫 Ticket créé : {ticket_channel.mention}",
+            ephemeral=True
+        )
+
+# ================= READY =================
+
+@bot.event
+async def on_ready():
+
+    print(f"✅ Connecté : {bot.user}")
+
+    bot.add_view(TicketView())
+    bot.add_view(DayOffView())
+    bot.add_view(HeureView())
+
+    if not presence_auto.is_running():
+        presence_auto.start()
+
+LAST_SENT = None
 
 # ================= AUTO PRESENCE =================
 
 @tasks.loop(minutes=1)
 async def presence_auto():
 
+    global LAST_SENT
+
     now = datetime.now()
 
-    if now.hour == HEURE_ENVOI and now.minute == 0:
+    config = load_hour()
+
+    HEURE = config["heure"]
+    MINUTE = config["minute"]
+
+    current_time = (
+        f"{now.day}-"
+        f"{now.month}-"
+        f"{now.year}-"
+        f"{HEURE}-"
+        f"{MINUTE}"
+    )
+
+    if LAST_SENT == current_time:
+        return
+
+    if now.hour == HEURE and now.minute == MINUTE:
+
+        LAST_SENT = current_time
 
         days = load_dayoff()
 
-        # ================= JOUR OFF =================
-
         if now.weekday() in days:
 
-            channel = bot.get_channel(
-                DAYOFF_CHANNEL_ID
-            )
+            channel = bot.get_channel(DAYOFF_CHANNEL_ID)
 
             if channel:
 
                 embed = discord.Embed(
                     title="🌙 Jour OFF",
                     description=(
-                        "Aucune présence aujourd'hui.\n\n"
+                        "Aucune présence aujourd'hui."
                         "Les Falcons restent dans l'ombre."
                     ),
                     color=0x222222
@@ -319,69 +406,263 @@ async def presence_auto():
 
             return
 
-        # ================= PRESENCE =================
+        channel = bot.get_channel(CHANNEL_ID)
 
-        await envoyer_presence()
+        if not channel:
+            return
 
-class DayOffView(View):
+        role = channel.guild.get_role(ROLE_ID)
+
+        if not role:
+            return
+
+        await envoyer_message_presence(channel, role)
+
+# ================= HEURE VIEW =================
+
+class HeureView(View):
+
     def __init__(self):
         super().__init__(timeout=None)
 
-    async def toggle_day(self, interaction: discord.Interaction, day_id: int):
+    async def refresh(self, interaction):
 
-        days = load_dayoff()
-
-        if day_id in days:
-            days.remove(day_id)
-        else:
-            days.append(day_id)
-
-        save_dayoff(days)
-
-        jours_text = "\n".join(
-            f"• {JOURS[d]}"
-            for d in sorted(days)
-        ) or "Aucun"
+        config = load_hour()
 
         embed = discord.Embed(
-            title="📅 Planning Day Off",
-            description=jours_text,
+            title="⏰ Gestion Heure Présence",
+            description=(
+                f"Heure actuelle : "
+                f"`{config['heure']:02d}:{config['minute']:02d}`"
+            ),
             color=0x8B0000
         )
 
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.response.edit_message(
+            embed=embed,
+            view=self
+        )
 
-    # ===== BUTTONS =====
+    @discord.ui.button(
+        label="+ Heure",
+        style=discord.ButtonStyle.green,
+        custom_id="heure_plus"
+    )
+    async def heure_plus(self, interaction, button):
 
-    @discord.ui.button(label="Lundi", style=discord.ButtonStyle.grey, custom_id="day_lundi")
-    async def lundi(self, interaction, button):
-        await self.toggle_day(interaction, 0)
+        config = load_hour()
 
-    @discord.ui.button(label="Mardi", style=discord.ButtonStyle.grey, custom_id="day_mardi")
-    async def mardi(self, interaction, button):
-        await self.toggle_day(interaction, 1)
+        heure = config["heure"] + 1
 
-    @discord.ui.button(label="Mercredi", style=discord.ButtonStyle.grey, custom_id="day_mercredi")
-    async def mercredi(self, interaction, button):
-        await self.toggle_day(interaction, 2)
+        if heure > 23:
+            heure = 0
 
-    @discord.ui.button(label="Jeudi", style=discord.ButtonStyle.grey, custom_id="day_jeudi")
-    async def jeudi(self, interaction, button):
-        await self.toggle_day(interaction, 3)
+        save_hour(heure, config["minute"])
 
-    @discord.ui.button(label="Vendredi", style=discord.ButtonStyle.grey, custom_id="day_vendredi")
-    async def vendredi(self, interaction, button):
-        await self.toggle_day(interaction, 4)
+        await self.refresh(interaction)
 
-    @discord.ui.button(label="Samedi", style=discord.ButtonStyle.red, custom_id="day_samedi")
-    async def samedi(self, interaction, button):
-        await self.toggle_day(interaction, 5)
+    @discord.ui.button(
+        label="- Heure",
+        style=discord.ButtonStyle.red,
+        custom_id="heure_minus"
+    )
+    async def heure_minus(self, interaction, button):
 
-    @discord.ui.button(label="Dimanche", style=discord.ButtonStyle.red, custom_id="day_dimanche")
-    async def dimanche(self, interaction, button):
-        await self.toggle_day(interaction, 6)
+        config = load_hour()
 
-# ================= COMMANDE PANEL =================
+        heure = config["heure"] - 1
+
+        if heure < 0:
+            heure = 23
+
+        save_hour(heure, config["minute"])
+
+        await self.refresh(interaction)
+
+    @discord.ui.button(
+        label="+5 min",
+        style=discord.ButtonStyle.blurple,
+        custom_id="minute_plus"
+    )
+    async def minute_plus(self, interaction, button):
+
+        config = load_hour()
+
+        minute = config["minute"] + 5
+        heure = config["heure"]
+
+        if minute >= 60:
+            minute = 0
+            heure += 1
+
+        if heure > 23:
+            heure = 0
+
+        save_hour(heure, minute)
+
+        await self.refresh(interaction)
+
+    @discord.ui.button(
+        label="-5 min",
+        style=discord.ButtonStyle.grey,
+        custom_id="minute_minus"
+    )
+    async def minute_minus(self, interaction, button):
+
+        config = load_hour()
+
+        minute = config["minute"] - 5
+        heure = config["heure"]
+
+        if minute < 0:
+            minute = 55
+            heure -= 1
+
+        if heure < 0:
+            heure = 23
+
+        save_hour(heure, minute)
+
+        await self.refresh(interaction)
+
+# ================= HELP =================
+
+@bot.command()
+async def hp(ctx):
+
+    embed = discord.Embed(
+        title="📖 Commandes",
+        color=0x8B0000
+    )
+
+    commandes = {
+
+        "//registre": "Envoie un registre",
+
+        "//rapport ID": "Rapport présence",
+
+        "//panel": "Créer panel ticket",
+
+        "//dayoff": "Panel jours OFF",
+
+        "//horaire": "Gestion des heures présence",
+
+        "//clear 10": "Supprimer messages",
+
+        "//restart": "Redémarrer bot",
+
+        "//stop": "Arrêter bot"
+    }
+
+    for nom, desc in commandes.items():
+
+        embed.add_field(
+            name=nom,
+            value=desc,
+            inline=False
+        )
+
+    await ctx.send(embed=embed)
+
+# ================= REGISTRE =================
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def registre(ctx):
+
+    role = ctx.guild.get_role(ROLE_ID)
+
+    if role is None:
+
+        await ctx.send(
+            "❌ Rôle introuvable."
+        )
+
+        return
+
+    await envoyer_message_presence(
+        ctx.channel,
+        role
+    )
+
+# ================= RAPPORT =================
+
+@bot.command()
+async def rapport(ctx, message_id: int):
+
+    message = await ctx.channel.fetch_message(
+        message_id
+    )
+
+    presents = []
+    absents = []
+    retard = []
+
+    for reaction in message.reactions:
+
+        async for user in reaction.users():
+
+            if user.bot:
+                continue
+
+            if str(reaction.emoji) == "✅":
+                presents.append(user)
+
+            elif str(reaction.emoji) == "❌":
+                absents.append(user)
+
+            elif str(reaction.emoji) == "⏰":
+                retard.append(user)
+
+    embed = discord.Embed(
+        title="📊 Rapport",
+        color=0x222222
+    )
+
+    embed.add_field(
+        name="Présents",
+        value="\n".join(
+            [u.mention for u in presents]
+        ) or "Personne",
+        inline=False
+    )
+
+    embed.add_field(
+        name="Absents",
+        value="\n".join(
+            [u.mention for u in absents]
+        ) or "Personne",
+        inline=False
+    )
+
+    embed.add_field(
+        name="Retard",
+        value="\n".join(
+            [u.mention for u in retard]
+        ) or "Personne",
+        inline=False
+    )
+
+    await ctx.send(embed=embed)
+
+# ================= PANEL =================
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def panel(ctx):
+
+    embed = discord.Embed(
+        title="📩 Ticket RP",
+        description="Ouvre un ticket.",
+        color=0x8B0000
+    )
+
+    await ctx.send(
+        embed=embed,
+        view=TicketView()
+    )
+
+# ================= DAYOFF PANEL =================
 
 @bot.command()
 @commands.has_permissions(administrator=True)
@@ -389,25 +670,17 @@ async def dayoff(ctx):
 
     days = load_dayoff()
 
-    jours_text = "\n".join([
-        f"• {JOURS[d]}"
-        for d in sorted(days)
-    ])
+    jours_text = "\n".join(
+        [f"• {JOURS[d]}" for d in sorted(days)]
+    )
 
     if not jours_text:
         jours_text = "Aucun"
 
     embed = discord.Embed(
-        title="📅 Gestion des DayOff",
-        description=(
-            "Choisissez les jours OFF.\n\n"
-            f"{jours_text}"
-        ),
+        title="📅 Planning Day Off",
+        description=jours_text,
         color=0x8B0000
-    )
-
-    embed.set_footer(
-        text="Les jours OFF désactivent automatiquement les présences."
     )
 
     await ctx.send(
@@ -416,175 +689,120 @@ async def dayoff(ctx):
     )
 
 
-#=====================auto-rôle =======================
-BASE_ROLE_ID = 1502632030104453200
 
-@bot.event
-async def on_member_join(member):
+# ================= HORAIRE PANEL =================
 
-    role = member.guild.get_role(BASE_ROLE_ID)
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def horaire(ctx):
 
-    if role is None:
-        print("❌ Rôle introuvable")
-        return
+    config = load_hour()
 
-    try:
-        await member.add_roles(role)
+    embed = discord.Embed(
+        title="⏰ Gestion Heure Présence",
+        description=(
+            f"Heure actuelle : "
+            f"`{config['heure']:02d}:{config['minute']:02d}`"
+        ),
+        color=0x8B0000
+    )
 
-        print(f"✅ Rôle donné à {member.name}")
+    await ctx.send(
+        embed=embed,
+        view=HeureView()
+    )
 
-    except Exception as e:
-        print(f"Erreur attribution rôle : {e}")
+# ================= CLEAR =================
 
+@bot.command()
+@commands.has_permissions(manage_messages=True)
+async def clear(ctx, amount: int):
 
-# ================  Close Ticket================
+    await ctx.channel.purge(
+        limit=amount + 1
+    )
+
+# ================= CLOSE TICKET =================
+
 @bot.command()
 async def close(ctx):
-    """Fermer un ticket avec logs en thread"""
 
     if "ticket-" not in ctx.channel.name:
         return
 
-    await ctx.send("🛑 Fermeture du dossier en cours...")
+    await ctx.send(
+        "🛑 Fermeture du ticket..."
+    )
 
-    # 🔥 Récupération des messages
     messages = []
-    async for msg in ctx.channel.history(limit=None, oldest_first=True):
-        contenu = msg.content if msg.content else "[Embed / Fichier]"
-        messages.append(f"[{msg.created_at.strftime('%d/%m %H:%M')}] {msg.author}: {contenu}")
+
+    async for msg in ctx.channel.history(
+        limit=None,
+        oldest_first=True
+    ):
+
+        contenu = msg.content or "[Embed/Fichier]"
+
+        messages.append(
+            f"[{msg.created_at.strftime('%d/%m %H:%M')}] {msg.author}: {contenu}"
+        )
 
     logs = "\n".join(messages)
 
-    log_channel = bot.get_channel(LOG_CHANNEL_ID)
+    log_channel = bot.get_channel(
+        LOG_CHANNEL_ID
+    )
 
     if log_channel:
 
-        # 🧵 Création du thread avec nom du ticket
         thread = await log_channel.create_thread(
             name=ctx.channel.name,
             type=discord.ChannelType.public_thread
         )
 
-        # 📜 Envoi des logs (découpé si trop long)
         chunk_size = 1900
-        for i in range(0, len(logs), chunk_size):
-            await thread.send(f"```{logs[i:i+chunk_size]}```")
 
-        # 🧠 Infos du ticket
-        embed = discord.Embed(
-            title="📁 Ticket archivé",
-            description=f"Salon : `{ctx.channel.name}`",
-            color=0x8B0000
-        )
-        embed.add_field(name="Fermé par", value=ctx.author.mention)
+        for i in range(
+            0,
+            len(logs),
+            chunk_size
+        ):
 
-        await thread.send(embed=embed)
+            await thread.send(
+                f"```{logs[i:i+chunk_size]}```"
+            )
 
-    # 🗑 suppression du salon
     await ctx.channel.delete()
-#gui
 
-class TicketView(View):
-    def __init__(self):
-        super().__init__(timeout=None)
+# ================= AUTO ROLE =================
 
-    @discord.ui.button(
-        label="🥃Prend un Béésh Tichii ! et rentre...",
-        style=discord.ButtonStyle.red,
-        custom_id="open_ticket"
-    )
-    async def open_ticket(self, interaction: discord.Interaction, button: Button):
+@bot.event
+async def on_member_join(member):
 
-        guild = interaction.guild
-        author = interaction.user
-
-        category = discord.utils.get(guild.categories, name="Ticket RP")
-
-        if category is None:
-            category = await guild.create_category("Ticket RP")
-
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(read_messages=False),
-            author: discord.PermissionOverwrite(read_messages=True),
-            guild.me: discord.PermissionOverwrite(read_messages=True)
-        }
-
-        ticket_channel = await guild.create_text_channel(
-            name=f"ticket-{author.name}",
-            category=category,
-            overwrites=overwrites
-        )
-
-        embed = discord.Embed(
-            title="📜 Salle secrétes ouverte",
-            description=(
-                "« Hao, assieds-toi. Que recherches-tu en entrant ici ? »\n\n"
-            ),
-            color=0x8B0000
-        )
-
-        await ticket_channel.send(author.mention, embed=embed)
-
-        await interaction.response.send_message(
-            f"🎫 Ticket créé : {ticket_channel.mention}",
-            ephemeral=True
-        )
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def panel(ctx):
-
-    embed = discord.Embed(
-        title="📩 Saloon Clandestin",
-        description="Prend un Béésh Tichii et ouvre la porte nous t'attendions"
+    role = member.guild.get_role(
+        BASE_ROLE_ID
     )
 
-    await ctx.send(embed=embed, view=TicketView())
+    if role:
+
+        try:
+            await member.add_roles(role)
+
+        except Exception as e:
+            print(e)
+
+# ================= DELETE COMMAND =================
 
 @bot.event
 async def on_command(ctx):
+
     try:
         await ctx.message.delete()
+
     except:
         pass
-#=================================== Panel Persistant===========================================================
-@bot.event
-async def on_ready():
-    print(f"Connecté en tant que {bot.user}")
 
-    # ✅ boutons persistants
-    bot.add_view(TicketView())
-    bot.add_view(DayOffView())
-    if not presence_auto.is_running():
-        presence_auto.start()
-
-#=================================== Command Clear ==============================================================
-@bot.command()
-@commands.has_permissions(manage_messages=True)
-async def clear(ctx, amount: int):
-    """Supprime un nombre de messages"""
-
-    if amount <= 0:
-        await ctx.send("❌ Nombre invalide.")
-        return
-
-    await ctx.channel.purge(limit=amount + 1)  # +1 pour la commande
-
-    msg = await ctx.send(f"🧹 {amount} messages supprimés.")
-    await msg.delete(delay=3)
-
-#==================================Logs Ticket==================================================================
-LOG_CHANNEL_ID = 1501653212229402634 # salon où seront envoyés les logs
-async def save_ticket(channel):
-    messages = []
-
-    async for msg in channel.history(limit=None, oldest_first=True):
-        messages.append(f"[{msg.created_at.strftime('%d/%m %H:%M')}] {msg.author}: {msg.content}")
-
-    return "\n".join(messages)
-
-
-#==================================server http bot on=============================================================
-PORT = int(os.environ.get("PORT", 10000))
+# ================= HTTP SERVER =================
 
 def run_server():
 
@@ -606,11 +824,11 @@ def run_server():
 
     server.serve_forever()
 
-
 threading.Thread(
     target=run_server,
     daemon=True
 ).start()
 
+# ================= RUN =================
 
 bot.run(TOKEN)
