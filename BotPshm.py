@@ -480,7 +480,7 @@ class HeureView(View):
         await self.refresh(interaction)
 
     @discord.ui.button(
-        label="+5 min",
+        label="+30 min",
         style=discord.ButtonStyle.blurple,
         custom_id="minute_plus"
     )
@@ -488,7 +488,7 @@ class HeureView(View):
 
         config = load_hour()
 
-        minute = config["minute"] + 5
+        minute = config["minute"] + 30
         heure = config["heure"]
 
         if minute >= 60:
@@ -503,7 +503,7 @@ class HeureView(View):
         await self.refresh(interaction)
 
     @discord.ui.button(
-        label="-5 min",
+        label="-30 min",
         style=discord.ButtonStyle.grey,
         custom_id="minute_minus"
     )
@@ -511,7 +511,7 @@ class HeureView(View):
 
         config = load_hour()
 
-        minute = config["minute"] - 5
+        minute = config["minute"] - 30
         heure = config["heure"]
 
         if minute < 0:
